@@ -9,15 +9,14 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 DB = "database.db"
 
-# ----------------------------
-# DATABASE INIT + SAFE MIGRATION
-# ----------------------------
+# -------------------------
+# INIT DATABASE + MIGRATION
+# -------------------------
 
 def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
 
-    # Create users table if not exists
     c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,23 +24,13 @@ def init_db():
     )
     """)
 
-    # Add new columns safely if not exist
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN bio TEXT")
-    except:
-        pass
+    # Safe column migration
+    for column in ["bio TEXT", "phone TEXT", "hometown TEXT"]:
+        try:
+            c.execute(f"ALTER TABLE users ADD COLUMN {column}")
+        except:
+            pass
 
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN phone TEXT")
-    except:
-        pass
-
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN hometown TEXT")
-    except:
-        pass
-
-    # Territory table
     c.execute("""
     CREATE TABLE IF NOT EXISTS territory_blocks (
         block_id TEXT PRIMARY KEY,
@@ -55,9 +44,9 @@ def init_db():
 
 init_db()
 
-# ----------------------------
+# -------------------------
 # ROUTES
-# ----------------------------
+# -------------------------
 
 @app.route("/")
 def home():
@@ -181,23 +170,30 @@ def territories():
     ])
 
 
-# DEBUG ROUTE (Optional)
-@app.route("/debug/users")
-def debug_users():
+# LEADERBOARD
+@app.route("/leaderboard")
+def leaderboard():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
 
-    c.execute("SELECT * FROM users")
+    c.execute("""
+        SELECT users.username, COUNT(territory_blocks.block_id) as total_blocks
+        FROM users
+        LEFT JOIN territory_blocks
+        ON users.id = territory_blocks.owner_id
+        GROUP BY users.id
+        ORDER BY total_blocks DESC
+    """)
+
     rows = c.fetchall()
-
     conn.close()
-    return jsonify(rows)
 
-
-# https://territory-backend-production.up.railway.app/debug/users    - This will be used to check the database
+    return jsonify([
+        {"username": r[0], "blocks": r[1]}
+        for r in rows
+    ])
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
