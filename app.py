@@ -9,10 +9,15 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 DB = "database.db"
 
+# ----------------------------
+# DATABASE INIT + SAFE MIGRATION
+# ----------------------------
+
 def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
 
+    # Create users table if not exists
     c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,6 +25,23 @@ def init_db():
     )
     """)
 
+    # Add new columns safely if not exist
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN bio TEXT")
+    except:
+        pass
+
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+    except:
+        pass
+
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN hometown TEXT")
+    except:
+        pass
+
+    # Territory table
     c.execute("""
     CREATE TABLE IF NOT EXISTS territory_blocks (
         block_id TEXT PRIMARY KEY,
@@ -33,12 +55,15 @@ def init_db():
 
 init_db()
 
+# ----------------------------
+# ROUTES
+# ----------------------------
 
 @app.route("/")
 def home():
     return "Backend running"
 
-
+# LOGIN
 @app.route("/login", methods=["POST"])
 def login():
     username = request.json.get("username")
@@ -60,6 +85,57 @@ def login():
     return jsonify({"user_id": user_id})
 
 
+# UPDATE PROFILE
+@app.route("/update_profile", methods=["POST"])
+def update_profile():
+    data = request.json
+
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+
+    c.execute("""
+        UPDATE users
+        SET bio=?, phone=?, hometown=?
+        WHERE id=?
+    """, (
+        data.get("bio"),
+        data.get("phone"),
+        data.get("hometown"),
+        data.get("user_id")
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "profile updated"})
+
+
+# GET PROFILE
+@app.route("/get_profile/<int:user_id>")
+def get_profile(user_id):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+
+    c.execute("""
+        SELECT username, bio, phone, hometown
+        FROM users WHERE id=?
+    """, (user_id,))
+
+    user = c.fetchone()
+    conn.close()
+
+    if user:
+        return jsonify({
+            "username": user[0],
+            "bio": user[1],
+            "phone": user[2],
+            "hometown": user[3]
+        })
+    else:
+        return jsonify({})
+
+
+# CAPTURE TERRITORY
 @app.route("/capture", methods=["POST"])
 def capture():
     data = request.json
@@ -74,7 +150,13 @@ def capture():
         VALUES (?, ?, ?)
         ON CONFLICT(block_id)
         DO UPDATE SET owner_id=?, last_updated=?
-    """, (block_id, user_id, datetime.now(), user_id, datetime.now()))
+    """, (
+        block_id,
+        user_id,
+        datetime.now(),
+        user_id,
+        datetime.now()
+    ))
 
     conn.commit()
     conn.close()
@@ -82,7 +164,8 @@ def capture():
     return jsonify({"status": "captured"})
 
 
-@app.route("/territories", methods=["GET"])
+# GET ALL TERRITORIES
+@app.route("/territories")
 def territories():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
@@ -92,11 +175,25 @@ def territories():
 
     conn.close()
 
-    result = [{"block_id": r[0], "owner_id": r[1]} for r in rows]
-    return jsonify(result)
+    return jsonify([
+        {"block_id": r[0], "owner_id": r[1]}
+        for r in rows
+    ])
+
+
+# DEBUG ROUTE (Optional)
+@app.route("/debug/users")
+def debug_users():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM users")
+    rows = c.fetchall()
+
+    conn.close()
+    return jsonify(rows)
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
