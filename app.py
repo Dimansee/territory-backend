@@ -1,17 +1,25 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import requests
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 DB = "database.db"
 
-# -------------------------
-# INIT DATABASE + MIGRATION
-# -------------------------
+# ===============================
+# NEWS CACHE SYSTEM
+# ===============================
+
+news_cache = {}
+CACHE_DURATION = timedelta(minutes=10)
+
+# ===============================
+# DATABASE INIT
+# ===============================
 
 def init_db():
     conn = sqlite3.connect(DB)
@@ -44,15 +52,18 @@ def init_db():
 
 init_db()
 
-# -------------------------
-# ROUTES
-# -------------------------
+# ===============================
+# BASIC ROUTES
+# ===============================
 
 @app.route("/")
 def home():
     return "Backend running"
 
+# ===============================
 # LOGIN
+# ===============================
+
 @app.route("/login", methods=["POST"])
 def login():
     username = request.json.get("username")
@@ -73,8 +84,10 @@ def login():
     conn.close()
     return jsonify({"user_id": user_id})
 
+# ===============================
+# PROFILE
+# ===============================
 
-# UPDATE PROFILE
 @app.route("/update_profile", methods=["POST"])
 def update_profile():
     data = request.json
@@ -99,7 +112,6 @@ def update_profile():
     return jsonify({"status": "profile updated"})
 
 
-# GET PROFILE
 @app.route("/get_profile/<int:user_id>")
 def get_profile(user_id):
     conn = sqlite3.connect(DB)
@@ -123,8 +135,10 @@ def get_profile(user_id):
     else:
         return jsonify({})
 
+# ===============================
+# TERRITORY
+# ===============================
 
-# CAPTURE TERRITORY
 @app.route("/capture", methods=["POST"])
 def capture():
     data = request.json
@@ -153,7 +167,6 @@ def capture():
     return jsonify({"status": "captured"})
 
 
-# GET ALL TERRITORIES
 @app.route("/territories")
 def territories():
     conn = sqlite3.connect(DB)
@@ -169,8 +182,10 @@ def territories():
         for r in rows
     ])
 
-
+# ===============================
 # LEADERBOARD
+# ===============================
+
 @app.route("/leaderboard")
 def leaderboard():
     conn = sqlite3.connect(DB)
@@ -193,6 +208,57 @@ def leaderboard():
         for r in rows
     ])
 
+# ===============================
+# NEWS WITH CACHING
+# ===============================
+
+GNEWS_API_KEY = os.environ.get("GNEWS_API_KEY")
+
+@app.route("/news/<city>")
+def get_news(city):
+
+    if not GNEWS_API_KEY:
+        return jsonify({"error": "API key not configured"}), 500
+
+    city = city.lower()
+
+    # 🔥 Check Cache
+    if city in news_cache:
+        cached_data = news_cache[city]
+
+        if datetime.now() - cached_data["timestamp"] < CACHE_DURATION:
+            print(f"Returning cached news for {city}")
+            return jsonify(cached_data["articles"])
+
+    # 🚀 Fetch from GNews
+    url = f"https://gnews.io/api/v4/search?q={city}&lang=en&max=10&apikey={GNEWS_API_KEY}"
+
+    response = requests.get(url)
+    data = response.json()
+
+    articles = []
+
+    if "articles" in data:
+        for article in data["articles"]:
+            articles.append({
+                "title": article.get("title"),
+                "url": article.get("url"),
+                "image": article.get("image")
+            })
+
+    # 💾 Store in cache
+    news_cache[city] = {
+        "timestamp": datetime.now(),
+        "articles": articles
+    }
+
+    print(f"Fetched fresh news for {city}")
+
+    return jsonify(articles)
+
+# ===============================
+# RUN SERVER
+# ===============================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
