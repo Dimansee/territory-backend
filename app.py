@@ -194,6 +194,10 @@ def debug_users():
     return jsonify(rows)
 
 
+# https://territory-backend-production.up.railway.app/debug/users    - This will be used to check the database
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
