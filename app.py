@@ -212,7 +212,7 @@ def leaderboard():
 # NEWS WITH CACHING
 # ===============================
 
-GNEWS_API_KEY = os.environ.get("GNEWS_API_KEY")
+GNEWS_API_KEY = os.environ.get("b4dd521315a31b38ed04028f5c7620ed")
 
 @app.route("/news/<city>")
 def get_news(city):
@@ -263,3 +263,4 @@ def get_news(city):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
